@@ -12,10 +12,10 @@ namespace CorrectContraAccountLogicDLL
         private readonly int _roundAccuracy;
         private readonly Company _company;
 
-        public Solver(int roundAccuracy, Company company)
+        public Solver(Company company)
         {
-            _roundAccuracy = roundAccuracy;
             _company = company;
+            _roundAccuracy = company.GetCompanyService().GetAdminInfo().TotalsAccuracy;
         }
 
         Stopwatch _stopwatch;
@@ -39,7 +39,6 @@ namespace CorrectContraAccountLogicDLL
 
         private void RecursiveSolveCombinations(JournalEntryLineModel targetLine, double currentSum, List<JournalEntryLineModel> included, List<JournalEntryLineModel> notIncluded, int startIndex, int milliseconds)
         {
-            var roundTotalsAccuracy = _roundAccuracy;
             for (int index = startIndex; index < notIncluded.Count; index++)
             {
                 if (_stopwatch.ElapsedMilliseconds > milliseconds)
@@ -49,7 +48,7 @@ namespace CorrectContraAccountLogicDLL
                 double goal = targetLine.Debit == 0 ? targetLine.Credit : targetLine.Debit;
                 JournalEntryLineModel nextLine = notIncluded[index];
                 double nextAmount = nextLine.Debit == 0 ? nextLine.Credit : nextLine.Debit;
-                double amountToCompare = Math.Round(currentSum + nextAmount, roundTotalsAccuracy);
+                double amountToCompare = Math.Round(currentSum + nextAmount, _roundAccuracy);
 
                 if (amountToCompare == goal)
                 {

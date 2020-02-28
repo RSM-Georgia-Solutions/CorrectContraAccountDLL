@@ -1,10 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using SAPbobsCOM;
+﻿using SAPbobsCOM;
+using static System.Configuration.ConfigurationSettings;
 
 namespace CorrectContraAccountLogicDLL
 {
+    [System.Obsolete("This method is obsolete, it has been replaced by System.Configuration!System.Configuration.ConfigurationManager.AppSettings")]
     public class JournalEntryLineModel
     {
         private readonly Company _company;
@@ -12,6 +11,10 @@ namespace CorrectContraAccountLogicDLL
         public JournalEntryLineModel(Company company)
         {
             _company = company;
+        }
+        public JournalEntryLineModel()
+        {
+            _company = new DiConnectionCompany().Company;
         }
         public int TransId { get; set; }
         public int LineId { get; set; }

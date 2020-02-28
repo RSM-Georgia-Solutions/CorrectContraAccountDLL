@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using SAPbobsCOM;
-using SAPbouiCOM;
 using Company = SAPbobsCOM.Company;
 
 namespace CorrectContraAccountLogicDLL
@@ -13,82 +12,27 @@ namespace CorrectContraAccountLogicDLL
     {
         private readonly Company _company;
         private Solver _solver;
-        public CorrectionLogic(int roundAccuricy, Company company)
+        public CorrectionLogic(Company company)
         {
             _company = company;
-            _solver = new Solver(roundAccuricy, company);
+            _solver = new Solver(company);
         }
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="maxLine"></param>
-        /// <param name="mustSkip"></param>
-        /// <param name="startDate"> Format yyyyMMdd </param>
-        /// <param name="endDate"> Format yyyyMMdd </param>
-        /// <param name="waitingTime"></param>
-        /// <param name="transIdParam"></param>
-        public void CorrectionJournalEntriesSecondLogic(int maxLine, bool mustSkip, string startDate, string endDate, int waitingTime = 60, string transIdParam = "")
-        {
-            Recordset recSetClear = (Recordset)_company.GetBusinessObject(BoObjectTypes.BoRecordset);
-            Recordset recSetUpdate = (Recordset)_company.GetBusinessObject(BoObjectTypes.BoRecordset);
-            recSetClear.DoQuery(
-                $"select distinct TransId from JDT1 where TransId in (select TransId from jdt1 group by TransId, U_CorrectContraAcc " +
-                "having U_CorrectContraAcc is null) AND U_CorrectContraAcc != 'Skip'");
-            while (!recSetClear.EoF)
-            {
-                recSetUpdate.DoQuery(
-                    $" update JDT1 set U_CorrectContraAcc = null, U_ContraAccountLineId = null, U_CorrectContraShortName = null where transid = {recSetClear.Fields.Item("TransId").Value}");
-                recSetClear.MoveNext();
-            }
 
-            //ვიღებთ ტრანზაქციას და ვწერთ მოდელში
+        public CorrectionLogic()
+        {
+            _company = new DiConnectionCompany().Company;
+            _solver = new Solver(_company);
+        }
+        public CorrectionLogic(string server, int dbServerType, string userName, string password, string companyDb)
+        {
+            _company = new DiConnectionCompany(server, dbServerType, userName, password, companyDb).Company;
+            _solver = new Solver(_company);
+        }
+
+        private void MainLogicSecond(List<JournalEntryLineModel> jdtLines, int waitingTime)
+        {
             Stopwatch st = new Stopwatch();
             st.Start();
-            List<JournalEntryLineModel> jdtLines = new List<JournalEntryLineModel>();
-            Recordset recSet = (Recordset)_company.GetBusinessObject(BoObjectTypes.BoRecordset);
-            Recordset recSet2 = (Recordset)_company.GetBusinessObject(BoObjectTypes.BoRecordset);
-            recSet2.DoQuery(
-                $"update JDT1 set U_CorrectContraAcc = 'Skip' , U_ContraAccountLineId = -2 where Debit = 0 and Credit = 0  AND U_CorrectContraAcc is null");
-
-
-            if (mustSkip)
-            {
-                recSet.DoQuery($@"SELECT *
-            FROM JDT1
-            LEFT JOIN OJDT ON JDT1.TransId = OJDT.TransId
-            WHERE CONVERT(DATE, OJDT.RefDate) >= '{startDate}'
-            AND CONVERT(DATE, OJDT.RefDate) <= '{endDate}'   AND U_CorrectContraAcc is null AND OJDT.TransId Not In (select TransId from JDT1 where Line_ID > {maxLine}) ORDER BY OJDT.RefDate, OJDT.TransId, Line_ID");
-            }
-            else
-            {
-                recSet.DoQuery($@"SELECT *
-            FROM JDT1
-            LEFT JOIN OJDT ON JDT1.TransId = OJDT.TransId
-            WHERE CONVERT(DATE, OJDT.RefDate) >= '{startDate}'
-            AND CONVERT(DATE, OJDT.RefDate) <= '{endDate}'    AND OJDT.TransId NOT IN (select TransId from JDT1 where Line_ID > {maxLine}) ORDER BY OJDT.RefDate, OJDT.TransId, Line_ID");
-            }
-
-            if (!string.IsNullOrWhiteSpace(transIdParam))
-            {
-                recSet.DoQuery($@"SELECT * FROM JDT1 WHERE TransId in ({transIdParam})");
-            }
-
-            jdtLines.Clear();
-            while (!recSet.EoF)
-            {
-                JournalEntryLineModel model = new JournalEntryLineModel(_company)
-                {
-                    Account = recSet.Fields.Item("Account").Value.ToString(),
-                    ContraAccount = recSet.Fields.Item("ContraAct").Value.ToString(),
-                    Credit = double.Parse(recSet.Fields.Item("Credit").Value.ToString()),
-                    Debit = double.Parse(recSet.Fields.Item("Debit").Value.ToString()),
-                    SortName = recSet.Fields.Item("ShortName").Value.ToString(),
-                    TransId = int.Parse(recSet.Fields.Item("TransId").Value.ToString()),
-                    LineId = int.Parse(recSet.Fields.Item("Line_ID").Value.ToString())
-                };
-                jdtLines.Add(model);
-                recSet.MoveNext();
-            }
 
             //ვაჯგუფებთ ტრანზაქციის ID-ს მიხედვით (ამოვაგდებთ სადაც დებიტი და კრედიტი 0 ის ტოლია)
             IEnumerable<IGrouping<int, JournalEntryLineModel>> groupBy = jdtLines
@@ -124,23 +68,7 @@ namespace CorrectContraAccountLogicDLL
                     debitLines.Add(journalEntryLineModel);
                 }
 
-                //foreach (JournalEntryLineModel journalEntryLineModel in debitLines)
-                //{
-                //    var creditLine = creditLines.FirstOrDefault(x => x.Credit == journalEntryLineModel.Debit);
-                //    if (creditLine == null)
-                //    {
-                //        continue;
-                //    }
-                //    journalEntryLineModel.CorrectContraAccount = creditLine.Account;
-                //    journalEntryLineModel.ContraAccountLineId = creditLine.LineId;
-                //    journalEntryLineModel.CorrectContraShortName = creditLine.SortName;
-                //    journalEntryLineModel.UpdateSql();
-                //    creditLine.CorrectContraAccount = "SourceSimple";
-                //    creditLine.ContraAccountLineId = -1;
-                //    creditLine.UpdateSql();
-                //    creditLines.Remove(creditLine);
-                //    debitLines.Remove(journalEntryLineModel);
-                //}
+
                 // ლოგიკა რომელიც გვიბრუნებს საჟურნალო გატარების სტრიქონებს რომლის ჯამიც გვაძლებს გადაცემული სტრიქონის თანხას
                 while (debitLines.Count > 0 || creditLines.Count > 0)
                 {
@@ -261,68 +189,14 @@ namespace CorrectContraAccountLogicDLL
                     }
                 }
                 increment++;
-                SAPbouiCOM.Framework.Application.SBO_Application.SetStatusBarMessage($"{increment} of {total}",
-                    BoMessageTime.bmt_Short,
-                    false);
             }
             var wastedMinutes = st.ElapsedMilliseconds / 60000;
             st.Stop();
-            SAPbouiCOM.Framework.Application.SBO_Application.MessageBox("SUCCESS");
         }
-
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="maxLine"></param>
-        /// <param name="mustSkip"></param>
-        /// <param name="startDate"> Format yyyyMMdd </param>
-        /// <param name="endDate"> Format yyyyMMdd </param>
-        /// <param name="waitingTime"></param>
-        /// <param name="transIdParam"></param>
-        public void CorrectionJournalEntries(int maxLine, bool mustSkip, string startDate, string endDate, int waitingTime = 60, string transIdParam = "")
+        private void MainLogicFirst(List<JournalEntryLineModel> jdtLines, int waitingTime)
         {
             Stopwatch st = new Stopwatch();
             st.Start();
-
-            List<JournalEntryLineModel> jdtLines = new List<JournalEntryLineModel>();
-            Recordset recSet = (Recordset)_company.GetBusinessObject(BoObjectTypes.BoRecordset);
-            Recordset recSet2 = (Recordset)_company.GetBusinessObject(BoObjectTypes.BoRecordset);
-            recSet2.DoQuery($"update JDT1 set U_CorrectContraAcc = 'Skip' , U_ContraAccountLineId = -2 where " +
-                            $"Debit = 0 and Credit = 0  AND U_CorrectContraAcc is null");
-            recSet.DoQuery(mustSkip
-                ? $@"SELECT * FROM JDT1 LEFT JOIN OJDT ON JDT1.TransId = OJDT.TransId
-            WHERE CONVERT(DATE, OJDT.RefDate) >= '{startDate}'
-            AND CONVERT(DATE, OJDT.RefDate) <= '{endDate}'
-            AND U_CorrectContraAcc is null AND OJDT.TransId Not In 
-                (select TransId from JDT1 where Line_ID > {maxLine}) ORDER BY OJDT.RefDate, OJDT.TransId, Line_ID"
-                : $@"SELECT * FROM JDT1
-            LEFT JOIN OJDT ON JDT1.TransId = OJDT.TransId
-            WHERE CONVERT(DATE, OJDT.RefDate) >= '{startDate}'
-            AND CONVERT(DATE, OJDT.RefDate) <= '{endDate}'  AND OJDT.TransId NOT IN 
-             (select TransId from JDT1 where Line_ID > {maxLine}) ORDER BY OJDT.RefDate, OJDT.TransId, Line_ID");
-
-            if (!string.IsNullOrWhiteSpace(transIdParam))
-            {
-                recSet.DoQuery($@"SELECT * FROM JDT1 WHERE TransId = '{transIdParam}'");
-            }
-
-            jdtLines.Clear();
-            while (!recSet.EoF)
-            {
-                JournalEntryLineModel model = new JournalEntryLineModel(_company)
-                {
-                    Account = recSet.Fields.Item("Account").Value.ToString(),
-                    ContraAccount = recSet.Fields.Item("ContraAct").Value.ToString(),
-                    Credit = double.Parse(recSet.Fields.Item("Credit").Value.ToString()),
-                    Debit = double.Parse(recSet.Fields.Item("Debit").Value.ToString()),
-                    SortName = recSet.Fields.Item("ShortName").Value.ToString(),
-                    TransId = int.Parse(recSet.Fields.Item("TransId").Value.ToString()),
-                    LineId = int.Parse(recSet.Fields.Item("Line_ID").Value.ToString())
-                };
-                jdtLines.Add(model);
-                recSet.MoveNext();
-            }
-
             //ვაჯგუფებთ ტრანზაქციის ID-ს მიხედვით (ამოვაგდებთ სადაც დებიტი და კრედიტი 0 ის ტოლია)
             IEnumerable<IGrouping<int, JournalEntryLineModel>> groupBy = jdtLines
                 .Where(y => y.Debit != 0 || y.Credit != 0)
@@ -398,7 +272,8 @@ namespace CorrectContraAccountLogicDLL
                     else if (Math.Abs(maxDebitLine.Debit) > Math.Abs(maxCreditLine.Credit))
                     {
                         List<JournalEntryLineModel> sources = _solver.SolveCombinations(maxDebitLine,
-                            creditLines, waitingTime * 1000);
+                            creditLines,
+                            waitingTime * 1000);
                         foreach (JournalEntryLineModel journalEntryLineModel in sources)
                         {
                             journalEntryLineModel.CorrectContraAccount = maxDebitLine.Account;
@@ -416,14 +291,138 @@ namespace CorrectContraAccountLogicDLL
                 }
 
                 increment++;
-                SAPbouiCOM.Framework.Application.SBO_Application.SetStatusBarMessage($"{increment} of {total}",
-                    BoMessageTime.bmt_Short,
-                    false);
+            }
+            st.Stop();
+        }
+
+        private List<JournalEntryLineModel> JournalEntryLineModelsFromRecordset(Recordset recSet)
+        {
+            List<JournalEntryLineModel> jdtLines = new List<JournalEntryLineModel>();
+            while (!recSet.EoF)
+            {
+                JournalEntryLineModel model = new JournalEntryLineModel(_company)
+                {
+                    Account = recSet.Fields.Item("Account").Value.ToString(),
+                    ContraAccount = recSet.Fields.Item("ContraAct").Value.ToString(),
+                    Credit = double.Parse(recSet.Fields.Item("Credit").Value.ToString()),
+                    Debit = double.Parse(recSet.Fields.Item("Debit").Value.ToString()),
+                    SortName = recSet.Fields.Item("ShortName").Value.ToString(),
+                    TransId = int.Parse(recSet.Fields.Item("TransId").Value.ToString()),
+                    LineId = int.Parse(recSet.Fields.Item("Line_ID").Value.ToString())
+                };
+                jdtLines.Add(model);
+                recSet.MoveNext();
             }
 
-            var wastedMinutes = st.ElapsedMilliseconds / 60000;
-            st.Stop();
-            SAPbouiCOM.Framework.Application.SBO_Application.MessageBox("SUCCESS");
+            return jdtLines;
         }
+        public void CorrectionJournalEntriesSecondLogic(CorrectionJournalEntriesParams entriesParams)
+        {
+            CleanIncompleteTransactions();
+            SkipTransactionsWithoutAmount();
+
+            Recordset recSet = (Recordset)_company.GetBusinessObject(BoObjectTypes.BoRecordset);
+            recSet.DoQuery(entriesParams.MustSkip
+                ? $@"SELECT *
+            FROM JDT1
+            LEFT JOIN OJDT ON JDT1.TransId = OJDT.TransId
+            WHERE CONVERT(DATE, OJDT.RefDate) >= '{entriesParams.StartDate}'
+            AND CONVERT(DATE, OJDT.RefDate) <= '{entriesParams.EndDate}'   AND U_CorrectContraAcc is null AND OJDT.TransId Not In (select TransId from JDT1 where Line_ID > {entriesParams.MaxLine}) ORDER BY OJDT.RefDate, OJDT.TransId, Line_ID"
+                : $@"SELECT *
+            FROM JDT1
+            LEFT JOIN OJDT ON JDT1.TransId = OJDT.TransId
+            WHERE CONVERT(DATE, OJDT.RefDate) >= '{entriesParams.StartDate}'
+            AND CONVERT(DATE, OJDT.RefDate) <= '{entriesParams.EndDate}'    AND OJDT.TransId NOT IN (select TransId from JDT1 where Line_ID > {entriesParams.MaxLine}) ORDER BY OJDT.RefDate, OJDT.TransId, Line_ID");
+
+            List<JournalEntryLineModel> jdtLines = JournalEntryLineModelsFromRecordset(recSet);
+            MainLogicSecond(jdtLines, entriesParams.WaitingTimeInMinutes);
+
+        }
+
+        public void CorrectionJournalEntriesSecondLogic(string transIdParam, int waitingTime)
+        {
+            CleanIncompleteTransactions();
+            SkipTransactionsWithoutAmount();
+
+            Recordset recSet = (Recordset)_company.GetBusinessObject(BoObjectTypes.BoRecordset);
+            if (!string.IsNullOrWhiteSpace(transIdParam))
+            {
+                recSet.DoQuery($@"SELECT * FROM JDT1 WHERE TransId in ({transIdParam})");
+            }
+
+            List<JournalEntryLineModel> jdtLines = JournalEntryLineModelsFromRecordset(recSet);
+
+            MainLogicSecond(jdtLines, waitingTime);
+
+        }
+
+        private void SkipTransactionsWithoutAmount()
+        {
+            Recordset recSet2 = (Recordset)_company.GetBusinessObject(BoObjectTypes.BoRecordset);
+            recSet2.DoQuery(
+                $"update JDT1 set U_CorrectContraAcc = 'Skip' , U_ContraAccountLineId = -2 where Debit = 0 and Credit = 0  AND U_CorrectContraAcc is null");
+        }
+
+        private void CleanIncompleteTransactions()
+        {
+            Recordset recSetClear = (Recordset)_company.GetBusinessObject(BoObjectTypes.BoRecordset);
+            Recordset recSetUpdate = (Recordset)_company.GetBusinessObject(BoObjectTypes.BoRecordset);
+            recSetClear.DoQuery(
+                $"select distinct TransId from JDT1 where TransId in (select TransId from jdt1 group by TransId, U_CorrectContraAcc " +
+                "having U_CorrectContraAcc is null) AND U_CorrectContraAcc != 'Skip'");
+            while (!recSetClear.EoF)
+            {
+                recSetUpdate.DoQuery(
+                    $" update JDT1 set U_CorrectContraAcc = null, U_ContraAccountLineId = null, U_CorrectContraShortName = null" +
+                    $" where transid = {recSetClear.Fields.Item("TransId").Value}");
+                recSetClear.MoveNext();
+            }
+        }
+
+        public void CorrectionJournalEntries(CorrectionJournalEntriesParams entriesParams)
+        {
+
+            CleanIncompleteTransactions();
+            SkipTransactionsWithoutAmount();
+
+            Recordset recSet = (Recordset)_company.GetBusinessObject(BoObjectTypes.BoRecordset);
+            recSet.DoQuery(entriesParams.MustSkip
+                ? $@"SELECT * FROM JDT1 LEFT JOIN OJDT ON JDT1.TransId = OJDT.TransId
+            WHERE CONVERT(DATE, OJDT.RefDate) >= '{entriesParams.StartDate}'
+            AND CONVERT(DATE, OJDT.RefDate) <= '{entriesParams.EndDate}'
+            AND U_CorrectContraAcc is null AND OJDT.TransId Not In 
+                (select TransId from JDT1 where Line_ID > {entriesParams.MaxLine}) ORDER BY OJDT.RefDate, OJDT.TransId, Line_ID"
+                : $@"SELECT * FROM JDT1
+            LEFT JOIN OJDT ON JDT1.TransId = OJDT.TransId
+            WHERE CONVERT(DATE, OJDT.RefDate) >= '{entriesParams.StartDate}'
+            AND CONVERT(DATE, OJDT.RefDate) <= '{entriesParams.EndDate}'  AND OJDT.TransId NOT IN 
+             (select TransId from JDT1 where Line_ID > {entriesParams.MaxLine}) ORDER BY OJDT.RefDate, OJDT.TransId, Line_ID");
+
+            List<JournalEntryLineModel> jdtLines = JournalEntryLineModelsFromRecordset(recSet);
+
+            MainLogicFirst(jdtLines, entriesParams.WaitingTimeInMinutes);
+        }
+        public void CorrectionJournalEntries(string transIdParam)
+        {
+
+
+            CleanIncompleteTransactions();
+            SkipTransactionsWithoutAmount();
+
+            Recordset recSet = (Recordset)_company.GetBusinessObject(BoObjectTypes.BoRecordset);
+            if (!string.IsNullOrWhiteSpace(transIdParam))
+            {
+                recSet.DoQuery($@"SELECT * FROM JDT1 WHERE TransId = '{transIdParam}'");
+            }
+
+
+            List<JournalEntryLineModel> jdtLines = JournalEntryLineModelsFromRecordset(recSet);
+
+            MainLogicFirst(jdtLines, 60);
+        }
+
     }
+
+
 }
+
