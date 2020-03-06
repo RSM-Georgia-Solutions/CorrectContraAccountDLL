@@ -1,12 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Text;
 using SAPbobsCOM;
 using static System.Configuration.ConfigurationSettings;
 
 namespace CorrectContraAccountLogicDLL
 {
-    [System.Obsolete("This method is obsolete, it has been replaced by System.Configuration!System.Configuration.ConfigurationManager.AppSettings")]
+    [Obsolete("This method is obsolete, it has been replaced by System.Configuration!System.Configuration.ConfigurationManager.AppSettings")]
     public class DiConnectionCompany : ICompany
     {
         public DiConnectionCompany()
@@ -32,7 +30,7 @@ namespace CorrectContraAccountLogicDLL
             Company = new CompanyClass
             {
                 Server = server,
-                DbServerType = BoDataServerTypes.dst_MSSQL2016,
+                DbServerType = (BoDataServerTypes)dbServerType,
                 UserName = userName,
                 Password = password,
                 CompanyDB = companyDb,
@@ -41,7 +39,11 @@ namespace CorrectContraAccountLogicDLL
             Company.Connect();
             if (!Company.Connected)
             {
-                throw new Exception($"Cannot Connect To the Server :  {Company.Server}, {Company.UserName}, {Company.CompanyDB}");
+                throw new Exception($"Cannot Connect To the Server : {Company.GetLastErrorDescription()} : " +
+                                    $"Server : {Company.Server}, " +
+                                    $"DbServerType : {Company.DbServerType}," +
+                                    $"UserName : {Company.UserName}," +
+                                    $"CompanyDB : {Company.CompanyDB}");
             }
         }
 

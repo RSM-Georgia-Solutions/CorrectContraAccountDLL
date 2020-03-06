@@ -2,6 +2,18 @@
 
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
+    <ApplicationIcon />
+    <Win32Resource />
+    <Company>RSM</Company>
+    <PackageId>RSMCorrectContraAccountLogicDLL</PackageId>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <Version>1.0.0.2</Version>
+    <Authors>Nika Kurdadze ©</Authors>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <DocumentationFile></DocumentationFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,6 +33,7 @@
   <ItemGroup>
     <Reference Include="SAPBusinessOneSDK">
       <HintPath>..\..\RSDll\bin\Debug\SAPBusinessOneSDK.dll</HintPath>
+      <Private>true</Private>
     </Reference>
   </ItemGroup>
 

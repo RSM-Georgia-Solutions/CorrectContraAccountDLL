@@ -1,5 +1,4 @@
 ﻿using SAPbobsCOM;
-using static System.Configuration.ConfigurationSettings;
 
 namespace CorrectContraAccountLogicDLL
 {
